@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/anakafeel/LazyDots/internal/config"
 	"github.com/charmbracelet/bubbles/textinput"
@@ -19,10 +20,10 @@ type setupModel struct {
 
 func NewSetupModel() setupModel {
 	ti := textinput.New()
-	ti.Placeholder = "/home/user/dotfiles"
+	ti.Placeholder = "~/linuxworkspace/dotfiles"
 	ti.Focus()
-	ti.CharLimit = 128
-	ti.Width = 50
+	ti.CharLimit = 256
+	ti.Width = 60
 	return setupModel{input: ti}
 }
 
@@ -35,7 +36,24 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "enter":
-			path := m.input.Value()
+			raw := m.input.Value()
+			path := strings.TrimSpace(raw)
+			if path == "" {
+				m.msg = "❌ Please enter a path."
+				return m, nil
+			}
+
+			// Expand ~ to $HOME
+			if strings.HasPrefix(path, "~") {
+				home, err := os.UserHomeDir()
+				if err == nil {
+					if path == "~" {
+						path = home
+					} else if strings.HasPrefix(path, "~/") {
+						path = filepath.Join(home, path[2:])
+					}
+				}
+			}
 
 			absPath, err := filepath.Abs(path)
 			if err != nil {
@@ -57,23 +75,21 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 
-			// --- Optional: check for dotfiles ---
-			hasDotfiles := false
+			// Optional: check for dotfiles/packages
+			hasEntries := false
 			entries, _ := os.ReadDir(absPath)
 			for _, e := range entries {
-				if len(e.Name()) > 0 && e.Name()[0] == '.' {
-					hasDotfiles = true
+				if e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+					hasEntries = true
 					break
 				}
 			}
-
-			if !hasDotfiles {
-				m.msg = "⚠️ No dotfiles found here, but saved anyway."
+			if !hasEntries {
+				m.msg = "⚠️ Directory is empty, but config saved anyway."
 			} else {
 				m.msg = "✅ Valid directory! Config saved."
 			}
 
-			// --- Save config ---
 			cfg := config.Config{DotfilesPath: absPath}
 			m.err = config.Save(cfg)
 			if m.err != nil {
