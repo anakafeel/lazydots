@@ -7,21 +7,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
-// Message for switching between models
-type switchModelMsg struct {
-	model tea.Model
-}
-
-// Helper command to trigger model switch
-func switchTo(newModel tea.Model) tea.Cmd {
-	return func() tea.Msg {
-		return switchModelMsg{model: newModel}
-	}
-}
-
 type model struct {
-	cfg config.Config
-	msg string
+	cfg           config.Config
+	width, height int
 }
 
 func New(cfg config.Config) model {
@@ -32,18 +20,27 @@ func (m model) Init() tea.Cmd { return nil }
 
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		// Save window dimensions so child views (lists) can size themselves.
+		m.width = msg.Width
+		m.height = msg.Height
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+
 		case "r":
-			return m, switchTo(NewSetupModel())
+			// Go to setup screen (it tells you to restart when done)
+			return NewSetupModel(), nil
+
 		case "l":
-    		return m, switchTo(NewFileListModel(m.cfg.DotfilesPath))
+			// Go to the package list view (Stow-style packages)
+			return NewPackageListModel(m.cfg.DotfilesPath, m.width, m.height), nil
 		}
-	case switchModelMsg:
-		return msg.model, nil
 	}
+
 	return m, nil
 }
 
@@ -54,10 +51,10 @@ func (m model) View() string {
 
 	help := `🧠 Quick Actions:
   [r]  → Reconfigure path
-  [l]  → List dotfiles
+  [l]  → List dotfile packages
   [q]  → Quit
 
-💡 Tip: Keep your environment portable, sync dotfiles across devices effortlessly.
+💡 Tip: Point LazyDots at your Stow-style dotfiles repo (e.g. ~/linuxworkspace/dotfiles).
 `
 
 	footer := "\n────────────────────────────────────────────\n"
