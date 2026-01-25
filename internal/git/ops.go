@@ -29,15 +29,33 @@ func Commit(repoPath, message string) error {
 
 // Push pushes to the remote.
 func Push(repoPath string) error {
+	// Check if remote is configured
+	checkCmd := exec.Command("git", "-C", repoPath, "remote")
+	remoteOut, err := checkCmd.Output()
+	if err != nil || strings.TrimSpace(string(remoteOut)) == "" {
+		return fmt.Errorf("no remote configured for this repository")
+	}
+
 	cmd := exec.Command("git", "-C", repoPath, "push")
 	if out, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("git push failed: %s", strings.TrimSpace(string(out)))
+		outStr := strings.TrimSpace(string(out))
+		if strings.Contains(outStr, "no upstream branch") {
+			return fmt.Errorf("no upstream branch configured; run 'git push -u origin <branch>' first")
+		}
+		return fmt.Errorf("git push failed: %s", outStr)
 	}
 	return nil
 }
 
 // Pull pulls from the remote.
 func Pull(repoPath string) error {
+	// Check if remote is configured
+	checkCmd := exec.Command("git", "-C", repoPath, "remote")
+	remoteOut, err := checkCmd.Output()
+	if err != nil || strings.TrimSpace(string(remoteOut)) == "" {
+		return fmt.Errorf("no remote configured for this repository")
+	}
+
 	cmd := exec.Command("git", "-C", repoPath, "pull")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("git pull failed: %s", strings.TrimSpace(string(out)))
