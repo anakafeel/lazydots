@@ -13,7 +13,7 @@ import (
 )
 
 //
-// Link status for dotfiles
+// 🔹 Link status for dotfiles
 //
 
 type LinkStatus int
@@ -25,7 +25,7 @@ const (
 )
 
 //
-// Package list (top-level: FEDORA-WORKSTATION, hypr, kitty, etc.)
+// 🔹 Package list (top-level: FEDORA-WORKSTATION, hypr, kitty, etc.)
 //
 
 type packageItem struct {
@@ -38,13 +38,14 @@ func (p packageItem) Description() string { return p.fullPath }
 func (p packageItem) FilterValue() string { return p.name }
 
 type packageListModel struct {
-	list     list.Model
-	rootPath string
-	width    int
-	height   int
+	list        list.Model
+	rootPath    string
+	bannerColor string
+	width       int
+	height      int
 }
 
-func NewPackageListModel(rootPath string, width, height int) packageListModel {
+func NewPackageListModel(rootPath string, bannerColor string, width, height int) packageListModel {
 	items := []list.Item{}
 
 	entries, err := os.ReadDir(rootPath)
@@ -85,10 +86,11 @@ func NewPackageListModel(rootPath string, width, height int) packageListModel {
 	l.Title = fmt.Sprintf("Dotfile Packages in %s", filepath.Base(rootPath))
 
 	return packageListModel{
-		list:     l,
-		rootPath: rootPath,
-		width:    width,
-		height:   height,
+		list:        l,
+		rootPath:    rootPath,
+		bannerColor: bannerColor,
+		width:       width,
+		height:      height,
 	}
 }
 
@@ -96,17 +98,23 @@ func (m packageListModel) Init() tea.Cmd { return nil }
 
 func (m packageListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.list.SetSize(msg.Width, msg.Height-2)
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
 			// Go back to main screen, preserving the configured path.
-			return New(config.Config{DotfilesPath: m.rootPath}), nil
+			return New(config.Config{DotfilesPath: m.rootPath}, m.bannerColor), nil
 
 		case "enter":
 			if it := m.list.SelectedItem(); it != nil {
 				if pkg, ok := it.(packageItem); ok {
 					// Jump into the file list for this package.
-					return NewFileListModel(pkg.fullPath, m.width, m.height), nil
+					return NewFileListModel(pkg.fullPath, m.bannerColor, m.width, m.height), nil
 				}
 			}
 		}
@@ -122,7 +130,7 @@ func (m packageListModel) View() string {
 }
 
 //
-// File list (inside a specific package, recursive)
+// 🔹 File list (inside a specific package, recursive)
 //
 
 type fileItem struct {
@@ -156,11 +164,12 @@ func (f fileItem) FilterValue() string { return f.name }
 type fileListModel struct {
 	list        list.Model
 	packagePath string
+	bannerColor string
 	width       int
 	height      int
 }
 
-func NewFileListModel(packagePath string, width, height int) fileListModel {
+func NewFileListModel(packagePath string, bannerColor string, width, height int) fileListModel {
 	items := []list.Item{}
 
 	home, _ := os.UserHomeDir()
@@ -229,11 +238,12 @@ func NewFileListModel(packagePath string, width, height int) fileListModel {
 	}
 
 	l := list.New(items, list.NewDefaultDelegate(), width, height-2)
-	l.Title = fmt.Sprintf("Files in %s", filepath.Base(packagePath))
+	l.Title = fmt.Sprintf("Files in %s (space: toggle, a/A: link/unlink all)", filepath.Base(packagePath))
 
 	return fileListModel{
 		list:        l,
 		packagePath: packagePath,
+		bannerColor: bannerColor,
 		width:       width,
 		height:      height,
 	}
@@ -243,12 +253,81 @@ func (m fileListModel) Init() tea.Cmd { return nil }
 
 func (m fileListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case tea.WindowSizeMsg:
+		m.width = msg.Width
+		m.height = msg.Height
+		m.list.SetSize(msg.Width, msg.Height-2)
+		return m, nil
+
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
 			// Go back to package list.
 			root := filepath.Dir(m.packagePath)
-			return NewPackageListModel(root, m.width, m.height), nil
+			return NewPackageListModel(root, m.bannerColor, m.width, m.height), nil
+
+		case " ", "space":
+			// Toggle link/unlink for the selected file (like lazygit's space to stage)
+			idx := m.list.Index()
+			if idx < 0 || idx >= len(m.list.Items()) {
+				break
+			}
+
+			it, ok := m.list.Items()[idx].(fileItem)
+			if !ok {
+				break
+			}
+
+			src := filepath.Join(m.packagePath, it.name)
+			var err error
+
+			switch it.status {
+			case StatusLinked:
+				// Currently linked → try to unlink
+				err = unlinkDotfile(src, it.target)
+			case StatusMissing, StatusConflict:
+				// Not linked or conflicting → try to link
+				err = linkDotfile(src, it.target)
+			}
+
+			// Recompute status after operation
+			newStatus := computeLinkStatus(src, it.target)
+			it.status = newStatus
+			m.list.SetItem(idx, it)
+
+			// Show a status message in the footer (like lazygit)
+			if err != nil {
+				m.list.NewStatusMessage("⚠️ " + err.Error())
+			} else {
+				switch newStatus {
+				case StatusLinked:
+					m.list.NewStatusMessage("✅ Linked " + it.name)
+				case StatusMissing:
+					m.list.NewStatusMessage("⭕ Unlinked " + it.name)
+				case StatusConflict:
+					m.list.NewStatusMessage("⚠️ Conflict on " + it.name)
+				}
+			}
+
+		case "a":
+			// Link ALL files in package
+			linked, skipped, errors := m.linkAll()
+			m.refreshAllStatuses()
+			if errors > 0 {
+				m.list.NewStatusMessage(fmt.Sprintf("✅ Linked %d, skipped %d, ⚠️ %d errors", linked, skipped, errors))
+			} else {
+				m.list.NewStatusMessage(fmt.Sprintf("✅ Linked %d files, skipped %d", linked, skipped))
+			}
+
+		case "A":
+			// Unlink ALL files in package
+			unlinked, skipped, errors := m.unlinkAll()
+			m.refreshAllStatuses()
+			if errors > 0 {
+				m.list.NewStatusMessage(fmt.Sprintf("⭕ Unlinked %d, skipped %d, ⚠️ %d errors", unlinked, skipped, errors))
+			} else {
+				m.list.NewStatusMessage(fmt.Sprintf("⭕ Unlinked %d files, skipped %d", unlinked, skipped))
+			}
 		}
 	}
 
@@ -261,8 +340,73 @@ func (m fileListModel) View() string {
 	return m.list.View()
 }
 
+// linkAll links all files that aren't already linked.
+// Returns (linked, skipped, errors) counts.
+func (m *fileListModel) linkAll() (int, int, int) {
+	linked, skipped, errors := 0, 0, 0
+	for i, item := range m.list.Items() {
+		it, ok := item.(fileItem)
+		if !ok {
+			continue
+		}
+		if it.status == StatusLinked {
+			skipped++
+			continue
+		}
+		src := filepath.Join(m.packagePath, it.name)
+		if err := linkDotfile(src, it.target); err != nil {
+			errors++
+		} else {
+			linked++
+		}
+		// Update item status
+		it.status = computeLinkStatus(src, it.target)
+		m.list.SetItem(i, it)
+	}
+	return linked, skipped, errors
+}
+
+// unlinkAll unlinks all files that are currently linked.
+// Returns (unlinked, skipped, errors) counts.
+func (m *fileListModel) unlinkAll() (int, int, int) {
+	unlinked, skipped, errors := 0, 0, 0
+	for i, item := range m.list.Items() {
+		it, ok := item.(fileItem)
+		if !ok {
+			continue
+		}
+		if it.status != StatusLinked {
+			skipped++
+			continue
+		}
+		src := filepath.Join(m.packagePath, it.name)
+		if err := unlinkDotfile(src, it.target); err != nil {
+			errors++
+		} else {
+			unlinked++
+		}
+		// Update item status
+		it.status = computeLinkStatus(src, it.target)
+		m.list.SetItem(i, it)
+	}
+	return unlinked, skipped, errors
+}
+
+// refreshAllStatuses recomputes status for all items.
+func (m *fileListModel) refreshAllStatuses() {
+	for i, item := range m.list.Items() {
+		it, ok := item.(fileItem)
+		if !ok {
+			continue
+		}
+		src := filepath.Join(m.packagePath, it.name)
+		it.status = computeLinkStatus(src, it.target)
+		m.list.SetItem(i, it)
+	}
+}
+
 //
-// Helpers
+// 🔹 Helpers
 //
 
 // computeLinkStatus checks what's at targetPath and whether it is a symlink
@@ -301,4 +445,93 @@ func computeLinkStatus(srcPath, targetPath string) LinkStatus {
 
 	// Not a symlink – some other file/dir is in the way.
 	return StatusConflict
+}
+
+// linkDotfile creates a symlink from srcPath (in the repo) to targetPath (in $HOME).
+// It will:
+//   - create parent directories if needed
+//   - skip if the correct symlink already exists
+//   - return an error if a conflicting file/symlink exists
+func linkDotfile(srcPath, targetPath string) error {
+	// Ensure parent directory exists
+	if err := os.MkdirAll(filepath.Dir(targetPath), 0o755); err != nil {
+		return fmt.Errorf("mkdir failed: %w", err)
+	}
+
+	info, err := os.Lstat(targetPath)
+	if err == nil {
+		// Something already exists at target
+		if info.Mode()&os.ModeSymlink != 0 {
+			// It's a symlink; check if it's already correct
+			linkDest, err := os.Readlink(targetPath)
+			if err != nil {
+				return fmt.Errorf("readlink failed: %w", err)
+			}
+
+			absSrc, _ := filepath.Abs(srcPath)
+			absDest := linkDest
+			if !filepath.IsAbs(absDest) {
+				absDest = filepath.Join(filepath.Dir(targetPath), absDest)
+			}
+			absDest, _ = filepath.Abs(absDest)
+
+			if absSrc == absDest {
+				// Already correctly linked
+				return nil
+			}
+			return fmt.Errorf("target already linked to a different path: %s", targetPath)
+		}
+
+		// Regular file or directory exists
+		return fmt.Errorf("target already exists and is not a symlink: %s", targetPath)
+	} else if !os.IsNotExist(err) {
+		// Some other filesystem error
+		return fmt.Errorf("lstat failed: %w", err)
+	}
+
+	// Safe to create the symlink
+	if err := os.Symlink(srcPath, targetPath); err != nil {
+		return fmt.Errorf("symlink failed: %w", err)
+	}
+
+	return nil
+}
+
+// unlinkDotfile removes a symlink at targetPath IF and only if it points to srcPath.
+// It won't touch regular files or symlinks pointing elsewhere.
+func unlinkDotfile(srcPath, targetPath string) error {
+	info, err := os.Lstat(targetPath)
+	if os.IsNotExist(err) {
+		// Nothing to do
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("lstat failed: %w", err)
+	}
+
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("target is not a symlink: %s", targetPath)
+	}
+
+	linkDest, err := os.Readlink(targetPath)
+	if err != nil {
+		return fmt.Errorf("readlink failed: %w", err)
+	}
+
+	absSrc, _ := filepath.Abs(srcPath)
+	absDest := linkDest
+	if !filepath.IsAbs(absDest) {
+		absDest = filepath.Join(filepath.Dir(targetPath), absDest)
+	}
+	absDest, _ = filepath.Abs(absDest)
+
+	if absSrc != absDest {
+		return fmt.Errorf("symlink points elsewhere, refusing to remove: %s", targetPath)
+	}
+
+	if err := os.Remove(targetPath); err != nil {
+		return fmt.Errorf("remove failed: %w", err)
+	}
+
+	return nil
 }
