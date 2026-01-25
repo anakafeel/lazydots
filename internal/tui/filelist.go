@@ -172,9 +172,13 @@ type fileListModel struct {
 func NewFileListModel(packagePath string, bannerColor string, width, height int) fileListModel {
 	items := []list.Item{}
 
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		// Fallback to current directory if home cannot be determined
+		home = "."
+	}
 
-	err := filepath.WalkDir(packagePath, func(path string, d fs.DirEntry, err error) error {
+	err = filepath.WalkDir(packagePath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
