@@ -11,7 +11,11 @@ type Config struct {
 }
 
 func Path() string {
-    home, _ := os.UserHomeDir()
+    home, err := os.UserHomeDir()
+    if err != nil {
+        // Fallback to current directory if home cannot be determined
+        return filepath.Join(".", ".config", "lazydots", "config.json")
+    }
     return filepath.Join(home, ".config", "lazydots", "config.json")
 }
 
@@ -32,7 +36,12 @@ func Load() (Config, error) {
 
 func Save(cfg Config) error {
     cfgDir := filepath.Dir(Path())
-    os.MkdirAll(cfgDir, 0755)
-    data, _ := json.MarshalIndent(cfg, "", "  ")
+    if err := os.MkdirAll(cfgDir, 0755); err != nil {
+        return err
+    }
+    data, err := json.MarshalIndent(cfg, "", "  ")
+    if err != nil {
+        return err
+    }
     return os.WriteFile(Path(), data, 0644)
 }
