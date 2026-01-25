@@ -1,8 +1,7 @@
 package tui
 
 import (
-	"math/rand"
-	"time"
+	"math/rand/v2"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -39,8 +38,7 @@ var bannerColors = []string{
 // PickBannerColor returns a random color from the palette.
 // Call once at startup for consistent branding.
 func PickBannerColor() string {
-	rand.Seed(time.Now().UnixNano())
-	return bannerColors[rand.Intn(len(bannerColors))]
+	return bannerColors[rand.IntN(len(bannerColors))]
 }
 
 // RenderBanner returns the styled ASCII banner for the given terminal width.
