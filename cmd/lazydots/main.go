@@ -1,36 +1,52 @@
 package main
 
 import (
-    "log"
+	"log"
+	"os"
+	"slices"
 
-    tea "github.com/charmbracelet/bubbletea"
-    "github.com/anakafeel/LazyDots/internal/config"
-    "github.com/anakafeel/LazyDots/internal/tui"
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/anakafeel/LazyDots/internal/config"
+	"github.com/anakafeel/LazyDots/internal/tui"
 )
 
 func main() {
-    // If config doesn’t exist → first time setup
-    if !config.Exists() {
-        runSetup()
-        return
-    }
+	// If config doesn't exist → first time setup (no splash)
+	if !config.Exists() {
+		runSetup()
+		return
+	}
 
-    // Load config
-    cfg, err := config.Load()
-    if err != nil {
-        log.Fatal(err)
-    }
+	// Load config
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-    // Launch main TUI (with config)
-    app := tui.New(cfg)
-    if _, err := tea.NewProgram(app).Run(); err != nil {
-        log.Fatal(err)
-    }
+	// Pick banner color once for consistent branding
+	bannerColor := tui.PickBannerColor()
+
+	// Check for --no-splash flag
+	skipSplash := slices.Contains(os.Args[1:], "--no-splash")
+
+	// Choose initial model
+	var initialModel tea.Model
+	if skipSplash {
+		initialModel = tui.New(cfg, bannerColor)
+	} else {
+		initialModel = tui.NewSplashModel(cfg, bannerColor)
+	}
+
+	// Launch TUI
+	p := tea.NewProgram(initialModel, tea.WithAltScreen())
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
 
 func runSetup() {
-    p := tea.NewProgram(tui.NewSetupModel())
-    if _, err := p.Run(); err != nil {
-        log.Fatal(err)
-    }
+	p := tea.NewProgram(tui.NewSetupModel())
+	if _, err := p.Run(); err != nil {
+		log.Fatal(err)
+	}
 }
