@@ -1,5 +1,7 @@
 # LazyDots
 
+<img width="1911" height="1077" alt="image" src="https://github.com/user-attachments/assets/700db54a-c8d5-4acc-80fd-f906cc637b10" />
+
 A terminal-based dotfile manager inspired by [lazygit](https://github.com/jesseduffield/lazygit). Manage your dotfiles with a simple TUI — visualize symlink status, link/unlink files, and keep your configs organized across machines.
 
 ## The Problem
