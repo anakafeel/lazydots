@@ -32,7 +32,7 @@ func main() {
 	// Choose initial model
 	var initialModel tea.Model
 	if skipSplash {
-		initialModel = tui.New(cfg, bannerColor)
+		initialModel = tui.New(cfg, bannerColor, 0, 0)
 	} else {
 		initialModel = tui.NewSplashModel(cfg, bannerColor)
 	}

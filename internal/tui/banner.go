@@ -2,6 +2,7 @@ package tui
 
 import (
 	"math/rand/v2"
+	"strings"
 
 	"github.com/charmbracelet/lipgloss"
 )
@@ -52,5 +53,5 @@ func RenderBanner(width int, color string) string {
 		Foreground(lipgloss.Color(color)).
 		Bold(true)
 
-	return style.Render(logo)
+	return style.Render(strings.TrimLeft(logo, "\n"))
 }

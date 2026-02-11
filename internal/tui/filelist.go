@@ -82,7 +82,7 @@ func NewPackageListModel(rootPath string, bannerColor string, width, height int)
 		height = 15
 	}
 
-	l := list.New(items, list.NewDefaultDelegate(), width, height-2)
+	l := list.New(items, list.NewDefaultDelegate(), width, height)
 	l.Title = fmt.Sprintf("Dotfile Packages in %s", filepath.Base(rootPath))
 
 	return packageListModel{
@@ -101,14 +101,13 @@ func (m packageListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width, msg.Height-2)
+		m.list.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "q", "esc":
-			// Go back to main screen, preserving the configured path.
-			return New(config.Config{DotfilesPath: m.rootPath}, m.bannerColor), nil
+			return New(config.Config{DotfilesPath: m.rootPath}, m.bannerColor, m.width, m.height), nil
 
 		case "enter":
 			if it := m.list.SelectedItem(); it != nil {
@@ -241,7 +240,7 @@ func NewFileListModel(packagePath string, bannerColor string, width, height int)
 		height = 20
 	}
 
-	l := list.New(items, list.NewDefaultDelegate(), width, height-2)
+	l := list.New(items, list.NewDefaultDelegate(), width, height)
 	l.Title = fmt.Sprintf("Files in %s (space: toggle, a/A: link/unlink all)", filepath.Base(packagePath))
 
 	return fileListModel{
@@ -260,7 +259,7 @@ func (m fileListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		m.list.SetSize(msg.Width, msg.Height-2)
+		m.list.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case tea.KeyMsg:
