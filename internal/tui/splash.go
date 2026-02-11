@@ -36,12 +36,17 @@ func (m splashModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, nil
 
 	case tea.KeyMsg:
-		// Any key skips the splash
-		return New(m.cfg, m.bannerColor), nil
+		switch msg.String() {
+		case "q", "ctrl+c", "esc":
+			return m, tea.Quit
+		}
+		// Any other key → transition to dashboard
+		dashboard := New(m.cfg, m.bannerColor, m.width, m.height)
+		return dashboard, nil
 
 	case splashDoneMsg:
-		// Auto-transition after timeout
-		return New(m.cfg, m.bannerColor), nil
+		dashboard := New(m.cfg, m.bannerColor, m.width, m.height)
+		return dashboard, nil
 	}
 	return m, nil
 }
@@ -62,7 +67,7 @@ func (m splashModel) View() string {
 		"",
 		subtitleStyle.Render("Terminal dotfile manager"),
 		"",
-		hintStyle.Render("Press any key to continue..."),
+		hintStyle.Render("Press any key to continue (q to quit)..."),
 	)
 
 	if m.width > 0 && m.height > 0 {
