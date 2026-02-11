@@ -1,12 +1,13 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/anakafeel/LazyDots/internal/config"
+	"github.com/anakafeel/LazyDots/internal/fs"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
@@ -37,41 +38,31 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "enter":
 			raw := m.input.Value()
-			path := strings.TrimSpace(raw)
-			if path == "" {
-				m.msg = "❌ Please enter a path."
-				return m, nil
-			}
 
-			// Expand ~ to $HOME
-			if strings.HasPrefix(path, "~") {
-				home, err := os.UserHomeDir()
-				if err == nil {
-					if path == "~" {
-						path = home
-					} else if strings.HasPrefix(path, "~/") {
-						path = filepath.Join(home, path[2:])
-					}
+			// Resolve and validate the path
+			absPath, err := fs.ResolvePath(raw)
+			if err != nil {
+				switch {
+				case errors.Is(err, fs.ErrEmptyPath):
+					m.msg = "Please enter a path."
+				case errors.Is(err, fs.ErrHomeExpand):
+					m.msg = fmt.Sprintf("Failed to expand ~: %v", err)
+				default:
+					m.msg = fmt.Sprintf("Invalid path: %v", err)
 				}
-			}
-
-			absPath, err := filepath.Abs(path)
-			if err != nil {
-				m.msg = fmt.Sprintf("❌ Invalid path: %v", err)
 				return m, nil
 			}
 
-			info, err := os.Stat(absPath)
-			if os.IsNotExist(err) {
-				m.msg = "❌ That directory doesn’t exist."
-				return m, nil
-			}
-			if err != nil {
-				m.msg = fmt.Sprintf("❌ Error checking path: %v", err)
-				return m, nil
-			}
-			if !info.IsDir() {
-				m.msg = "❌ That path is not a directory."
+			// Validate it's an existing directory
+			if err := fs.ValidateDirectory(absPath); err != nil {
+				switch {
+				case errors.Is(err, fs.ErrNotExist):
+					m.msg = fmt.Sprintf("Directory doesn't exist: %s", absPath)
+				case errors.Is(err, fs.ErrNotDirectory):
+					m.msg = fmt.Sprintf("Not a directory: %s", absPath)
+				default:
+					m.msg = fmt.Sprintf("Error checking path: %v", err)
+				}
 				return m, nil
 			}
 
@@ -85,15 +76,15 @@ func (m setupModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 			if !hasEntries {
-				m.msg = "⚠️ Directory is empty, but config saved anyway."
+				m.msg = "Directory is empty, but config saved anyway."
 			} else {
-				m.msg = "✅ Valid directory! Config saved."
+				m.msg = "Valid directory! Config saved."
 			}
 
 			cfg := config.Config{DotfilesPath: absPath}
 			m.err = config.Save(cfg)
 			if m.err != nil {
-				m.msg = fmt.Sprintf("❌ Failed to save config: %v", m.err)
+				m.msg = fmt.Sprintf("Failed to save config: %v", m.err)
 				return m, nil
 			}
 
